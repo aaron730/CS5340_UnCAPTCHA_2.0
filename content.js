@@ -151,10 +151,72 @@ function showSpinner(element) {
     elapsed.textContent = secs + 's';
   }, 500);
 
+  // Replace the animated spinner with a static status icon (check or X)
+  // and briefly leave the container on screen so the user sees the result.
+  // Some pages re-render the captcha area or react to clicks by clearing
+  // overlays in their form, which would take our container with it. To
+  // survive that, we move the status node into a Shadow DOM hosted on
+  // documentElement: the page's scripts can't reach across the shadow
+  // boundary, and documentElement is not normally re-rendered.
+  function showStatus(kind) {
+    clearInterval(tick);
+    const isSuccess = kind === 'success';
+
+    // Snapshot the on-screen position before we move the node anywhere.
+    const rect = container.getBoundingClientRect();
+
+    const icon = document.createElement('div');
+    icon.style.cssText = `
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: ${isSuccess ? '#28a745' : '#dc3545'};
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      line-height: 18px;
+      text-align: center;
+      flex-shrink: 0;
+    `;
+    icon.textContent = isSuccess ? '\u2713' : '\u2715';
+    if (spinEl.parentNode === container) {
+      container.replaceChild(icon, spinEl);
+    } else {
+      container.insertBefore(icon, container.firstChild);
+    }
+    title.textContent = isSuccess ? 'CAPTCHA solved' : 'CAPTCHA failed';
+    const totalSecs = Math.floor((Date.now() - startedAt) / 1000);
+    elapsed.textContent = totalSecs + 's';
+
+    container.style.position = 'fixed';
+    container.style.top = Math.max(8, rect.top) + 'px';
+    container.style.left = Math.max(8, rect.left) + 'px';
+
+    // Host node attached to documentElement; attachShadow may not exist in
+    // older test environments, so fall back to a plain re-parent.
+    const host = document.createElement('div');
+    host.style.cssText = 'all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2147483647;';
+    (document.documentElement || document.body).appendChild(host);
+    if (typeof host.attachShadow === 'function') {
+      const shadow = host.attachShadow({ mode: 'closed' });
+      shadow.appendChild(container);
+    } else {
+      host.appendChild(container);
+    }
+
+    setTimeout(() => host.remove(), 2500);
+  }
+
   return {
     remove() {
       clearInterval(tick);
       container.remove();
+    },
+    success() {
+      showStatus('success');
+    },
+    fail() {
+      showStatus('fail');
     },
   };
 }
@@ -368,6 +430,7 @@ class ImageCaptchaDetector {
 
       const runSolve = async () => {
         const spinner = (globalThis.showSpinner || showSpinner)(imgElement);
+        let succeeded = false;
         try {
           const base64 = await this.imageToBase64(imgElement);
           if (!base64) return;
@@ -379,11 +442,14 @@ class ImageCaptchaDetector {
             if (inputField) {
               this.fillCaptchaInput(inputField, response.solution);
             }
+            succeeded = true;
           }
         } catch (error) {
           console.error('UnCAPTCHA: Failed to solve image captcha:', error);
         } finally {
-          spinner.remove();
+          if (succeeded && spinner.success) spinner.success();
+          else if (spinner.fail) spinner.fail();
+          else spinner.remove();
         }
       };
 
@@ -556,17 +622,21 @@ class RecaptchaV2Detector {
 
     const runSolve = async () => {
       const spinner = (globalThis.showSpinner || showSpinner)(element);
+      let succeeded = false;
       try {
         console.log('UnCAPTCHA: Requesting reCAPTCHA v2 solution from 2captcha');
         const captchaData = { method: 'userrecaptcha', googlekey: sitekey, pageurl: window.location.href };
         const response = await this.solveCaptcha(captchaData);
         if (response.solution) {
           this.applySolution(element, response.solution);
+          succeeded = true;
         }
       } catch (error) {
         console.error('UnCAPTCHA: Failed to solve reCAPTCHA v2:', error);
       } finally {
-        spinner.remove();
+        if (succeeded && spinner.success) spinner.success();
+        else if (spinner.fail) spinner.fail();
+        else spinner.remove();
       }
     };
 

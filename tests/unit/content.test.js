@@ -236,6 +236,12 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
     document.head.innerHTML = '';
+    // showStatus appends a shadow-host div directly to documentElement, so
+    // body/head resets alone don't catch it. Strip any non-head/body
+    // children of documentElement to start each test from a clean slate.
+    Array.from(document.documentElement.children).forEach((child) => {
+      if (child !== document.head && child !== document.body) child.remove();
+    });
     jest.clearAllMocks();
 
     detector = new RecaptchaV2Detector();
@@ -292,31 +298,56 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
     expect(global.showSolvePrompt).toHaveBeenCalledTimes(1);
   });
 
-  test('runSolve shows and removes a spinner during solving', async () => {
+  // Helper: status box is moved into a closed shadow root once solving
+  // finishes, so document.querySelector can't see it. We check the spinner
+  // is still on the page during solving (before the swap), and verify the
+  // shadow host count for the post-swap state.
+  function shadowHostCount() {
+    return document.documentElement.querySelectorAll(
+      ':scope > div[style*="2147483647"]',
+    ).length;
+  }
+
+  test('runSolve shows spinner, then a green checkmark on success', async () => {
     mockStorageGet({ autoSolve: true });
 
     let spinnerDuringSolve = 0;
     detector.solveCaptcha.mockImplementation(async () => {
-      // At this moment the spinner should be in the DOM.
       spinnerDuringSolve = document.querySelectorAll('.uncaptcha-spinner').length;
       return { solution: 'TOKEN' };
     });
 
-    await detector.handleRecaptcha(element, 'test-sitekey');
-    await flushMicrotasks();
+    jest.useFakeTimers();
+    try {
+      await detector.handleRecaptcha(element, 'test-sitekey');
+      await flushMicrotasks();
 
-    expect(spinnerDuringSolve).toBe(1);
-    // Spinner should be removed by the finally block after solve resolves.
-    expect(document.querySelectorAll('.uncaptcha-spinner').length).toBe(0);
+      expect(spinnerDuringSolve).toBe(1);
+      // After solving, the container is moved into a shadow-root host.
+      expect(shadowHostCount()).toBe(1);
+
+      jest.advanceTimersByTime(2500);
+      expect(shadowHostCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
-  test('spinner is removed even when the solver throws', async () => {
+  test('spinner shows a red X and is removed when the solver throws', async () => {
     mockStorageGet({ autoSolve: true });
     detector.solveCaptcha.mockRejectedValue(new Error('2captcha down'));
 
-    await detector.handleRecaptcha(element, 'test-sitekey');
-    await flushMicrotasks();
+    jest.useFakeTimers();
+    try {
+      await detector.handleRecaptcha(element, 'test-sitekey');
+      await flushMicrotasks();
 
-    expect(document.querySelectorAll('.uncaptcha-spinner').length).toBe(0);
+      expect(shadowHostCount()).toBe(1);
+
+      jest.advanceTimersByTime(2500);
+      expect(shadowHostCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
