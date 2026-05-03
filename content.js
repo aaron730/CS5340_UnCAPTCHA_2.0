@@ -151,18 +151,10 @@ function showSpinner(element) {
     elapsed.textContent = secs + 's';
   }, 500);
 
-  // Replace the animated spinner with a static status icon (check or X)
-  // and briefly leave the container on screen so the user sees the result.
-  // Some pages re-render the captcha area or react to clicks by clearing
-  // overlays in their form, which would take our container with it. To
-  // survive that, we move the status node into a Shadow DOM hosted on
-  // documentElement: the page's scripts can't reach across the shadow
-  // boundary, and documentElement is not normally re-rendered.
   function showStatus(kind) {
     clearInterval(tick);
     const isSuccess = kind === 'success';
 
-    // Snapshot the on-screen position before we move the node anywhere.
     const rect = container.getBoundingClientRect();
 
     const icon = document.createElement('div');
@@ -192,8 +184,7 @@ function showSpinner(element) {
     container.style.top = Math.max(8, rect.top) + 'px';
     container.style.left = Math.max(8, rect.left) + 'px';
 
-    // Host node attached to documentElement; attachShadow may not exist in
-    // older test environments, so fall back to a plain re-parent.
+ 
     const host = document.createElement('div');
     host.style.cssText = 'all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2147483647;';
     (document.documentElement || document.body).appendChild(host);
@@ -221,8 +212,6 @@ function showSpinner(element) {
   };
 }
 
-// Read the auto-solve preference from storage. Defaults to false so a
-// fresh install always asks before spending 2captcha credits.
 function getAutoSolvePreference() {
   return new Promise((resolve) => {
     try {
@@ -262,10 +251,6 @@ class ImageCaptchaDetector {
   }
 
   startDetection() {
-    // Only run in the top frame. The content script is injected into every
-    // frame (all_frames: true), so without this guard a captcha image inside
-    // a same-origin iframe would spawn a second "Solve this CAPTCHA?" prompt
-    // from within that iframe.
     if (window !== window.top) {
       console.log('UnCAPTCHA: Image detector skipped (sub-frame)');
       return;
@@ -419,7 +404,6 @@ class ImageCaptchaDetector {
     try {
       await this.waitForImageLoad(imgElement);
 
-      // Ensure image is large enough to be a CAPTCHA and accepted by 2captcha
       const width = imgElement.naturalWidth || imgElement.width;
       const height = imgElement.naturalHeight || imgElement.height;
 
@@ -601,10 +585,6 @@ class RecaptchaV2Detector {
   processExistingRecaptchas() {
     if (!this.isEnabled) return;
 
-    // Only prompt from the top frame. reCAPTCHA injects same-origin sub-frames
-    // (e.g. the anchor/checkbox frame) where the content script also runs; if
-    // we prompt there too, the user sees a second, clipped popup inside the
-    // tiny iframe. The top-frame widget path below is sufficient to solve.
     if (window !== window.top) return;
 
     const widgets = document.querySelectorAll('.g-recaptcha, [data-sitekey]');
@@ -650,16 +630,6 @@ class RecaptchaV2Detector {
   }
 
   applySolution(element, solution) {
-    // The real work happens in injected.js, which runs in the page's main
-    // world: it fills every g-recaptcha-response textarea, invokes the
-    // widget's data-callback if present, and walks Google's internal
-    // ___grecaptcha_cfg.clients registry to trigger callbacks wired via
-    // grecaptcha.render({ callback: fn }) (which leave no DOM attribute).
-    //
-    // We can't do any of that from the content script's isolated world.
-    // Page CSP typically blocks literal inline <script>, but whitelists
-    // chrome-extension:// URLs, so we load injected.js as an external
-    // script and pass the solution + optional callback name via data-*.
     console.log('UnCAPTCHA: Applying reCAPTCHA v2 solution');
     const callback = element.getAttribute('data-callback') || element.getAttribute('callback') || '';
     const script = document.createElement('script');
@@ -732,9 +702,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       detectionScore: highestScore,
       confidence: detected ? imageCaptchaDetector.getConfidenceLabel(highestScore) : "None"
     });
-    return false; // Sync response
+    return false; 
   }
-  return true; // Keep open for other potential async messages
+  return true; 
 });
 
 if (typeof module !== 'undefined') {

@@ -1,4 +1,3 @@
-// Mock MutationObserver
 global.MutationObserver = class {
   constructor(callback) {
     this.callback = callback;
@@ -26,7 +25,6 @@ global.chrome = {
   },
 };
 
-// Define showSolvePrompt BEFORE requiring content.js
 global.showSolvePrompt = jest.fn((el, cb) => cb());
 
 const content = require('../../content.js');
@@ -37,21 +35,14 @@ const {
   getAutoSolvePreference,
 } = content;
 
-// Helper to override the storage.sync.get mock for a single test. The
-// default mock at the top of the file returns { enabled: true } regardless
-// of the keys requested, which is not enough for auto-solve tests — they
-// need to control the autoSolve value too.
+
 function mockStorageGet(storeData) {
   chrome.storage.sync.get.mockImplementation((keys, callback) => {
     callback(storeData);
   });
 }
 
-// Flush any pending microtasks (resolved promises) several times. Needed
-// because handleRecaptcha kicks off a fire-and-forget runSolve() chain
-// that we can't directly await. A few trips through the microtask queue
-// is enough to let those chained then/finally handlers run. jsdom does
-// not expose setImmediate, so we use Promise.resolve() instead.
+
 async function flushMicrotasks() {
   for (let i = 0; i < 5; i++) {
     await Promise.resolve();
@@ -77,9 +68,7 @@ describe('ImageCaptchaDetector', () => {
     img.src = 'captcha.png';
     img.width = 10;
     img.height = 10;
-    // Add keywords to make it potentially valid by score
     img.alt = 'captcha';
-    // Add input field nearby to increase score
     const input = document.createElement('input');
     input.type = 'text';
     input.name = 'captcha_input';
@@ -101,7 +90,6 @@ describe('RecaptchaV2Detector', () => {
   });
 
   test('processExistingRecaptchas finds g-recaptcha elements', () => {
-    // Mock window.location to not be anchor frame
     delete window.location;
     window.location = new URL('https://example.com');
 
@@ -117,7 +105,6 @@ describe('RecaptchaV2Detector', () => {
   });
 
   test('processExistingRecaptchas does nothing in a sub-frame', () => {
-    // Mock window.location to not be anchor frame
     delete window.location;
     window.location = new URL('https://example.com');
 
@@ -126,7 +113,6 @@ describe('RecaptchaV2Detector', () => {
     widget.setAttribute('data-sitekey', '6LeOeSkUAAAAAAs_FByOFeC0kiY94_N9HOA95_3S');
     document.body.appendChild(widget);
 
-    // Simulate running inside a sub-frame: window !== window.top
     const originalTop = window.top;
     Object.defineProperty(window, 'top', { value: {}, configurable: true });
 
@@ -146,7 +132,6 @@ describe('showSpinner', () => {
     document.body.innerHTML = '';
     document.head.innerHTML = '';
     element = document.createElement('div');
-    // Spinner positions itself via getBoundingClientRect, so stub it.
     element.getBoundingClientRect = () => ({
       top: 50, left: 100, width: 100, height: 50, bottom: 100, right: 200,
     });
@@ -158,7 +143,6 @@ describe('showSpinner', () => {
     const overlays = document.querySelectorAll('.uncaptcha-spinner');
 
     expect(overlays.length).toBe(1);
-    // Overlay should contain the "Solving CAPTCHA…" label.
     expect(overlays[0].textContent).toContain('Solving CAPTCHA');
 
     spinner.remove();
@@ -214,7 +198,6 @@ describe('getAutoSolvePreference', () => {
   });
 
   test('coerces non-boolean truthy values to false (strict === true check)', async () => {
-    // Guards against accidentally treating stray string/number values as "on".
     mockStorageGet({ autoSolve: 'yes' });
     const result = await getAutoSolvePreference();
     expect(result).toBe(false);
@@ -236,9 +219,7 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
     document.head.innerHTML = '';
-    // showStatus appends a shadow-host div directly to documentElement, so
-    // body/head resets alone don't catch it. Strip any non-head/body
-    // children of documentElement to start each test from a clean slate.
+
     Array.from(document.documentElement.children).forEach((child) => {
       if (child !== document.head && child !== document.body) child.remove();
     });
@@ -255,12 +236,9 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
     });
     document.body.appendChild(element);
 
-    // Prevent applySolution from touching the real DOM / chrome.runtime.
     jest.spyOn(detector, 'applySolution').mockImplementation(() => {});
-    // Short-circuit the 2captcha call so the handler completes synchronously-ish.
     jest.spyOn(detector, 'solveCaptcha').mockResolvedValue({ solution: 'TOKEN' });
 
-    // Reset the showSolvePrompt spy between tests.
     global.showSolvePrompt = jest.fn((el, cb) => cb());
   });
 
@@ -268,7 +246,6 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
     mockStorageGet({ autoSolve: true });
 
     await detector.handleRecaptcha(element, 'test-sitekey');
-    // Let the fire-and-forget runSolve() chain resolve.
     await flushMicrotasks();
 
     expect(global.showSolvePrompt).not.toHaveBeenCalled();
@@ -285,7 +262,6 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
     await flushMicrotasks();
 
     expect(global.showSolvePrompt).toHaveBeenCalledTimes(1);
-    // The default mock immediately runs the callback, so the solver still fires.
     expect(detector.solveCaptcha).toHaveBeenCalled();
   });
 
@@ -298,10 +274,6 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
     expect(global.showSolvePrompt).toHaveBeenCalledTimes(1);
   });
 
-  // Helper: status box is moved into a closed shadow root once solving
-  // finishes, so document.querySelector can't see it. We check the spinner
-  // is still on the page during solving (before the swap), and verify the
-  // shadow host count for the post-swap state.
   function shadowHostCount() {
     return document.documentElement.querySelectorAll(
       ':scope > div[style*="2147483647"]',
@@ -323,7 +295,6 @@ describe('RecaptchaV2Detector auto-solve behavior', () => {
       await flushMicrotasks();
 
       expect(spinnerDuringSolve).toBe(1);
-      // After solving, the container is moved into a shadow-root host.
       expect(shadowHostCount()).toBe(1);
 
       jest.advanceTimersByTime(2500);

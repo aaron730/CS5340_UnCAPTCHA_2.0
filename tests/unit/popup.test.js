@@ -1,6 +1,3 @@
-// Tests for popup.js. The file wires up the popup UI inside a
-// DOMContentLoaded handler, so we build the DOM the popup expects, load
-// the script, then fire DOMContentLoaded to run the handler.
 
 function makePopupDom() {
   document.body.innerHTML = `
@@ -138,8 +135,7 @@ describe('popup.js DOMContentLoaded wiring', () => {
   });
 
   test('scan button click requests a scan from the active tab', () => {
-    // sendMessage(tabId, msg, callback) — we stub it to invoke the callback
-    // with a "no captcha" response.
+
     chromeMock.tabs.sendMessage.mockImplementation((_id, _msg, cb) =>
       cb({ detected: false }),
     );
