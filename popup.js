@@ -1,4 +1,3 @@
-// popup.js
 document.addEventListener('DOMContentLoaded', () => {
   const toggleButton = document.getElementById('toggleButton');
   const autoSolveToggle = document.getElementById('autoSolveToggle');
@@ -14,9 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   console.log("Popup loaded");
 
-  // The Change API Key button stays hidden until the user enters the
-  // Konami code while the popup is open. Tracked here so showing the
-  // stored-key state doesn't re-reveal the button.
   let konamiUnlocked = false;
 
   function showApiKeySection() {
@@ -52,12 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Load saved state
   chrome.storage.sync.get(['enabled', 'apiKey', 'autoSolve'], (result) => {
     const enabled = result.enabled ?? true;
     toggleButton.checked = enabled;
 
-    // Auto-solve defaults to off.
     autoSolveToggle.checked = result.autoSolve ?? false;
 
     if (result.apiKey && result.apiKey !== 'YOUR_API_KEY_HERE') {
@@ -73,15 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
     detailsEl.textContent = "";
   });
 
-  // Persist auto-solve toggle. The content script reads this flag fresh
-  // on each captcha encounter, so no message plumbing is needed here.
+
   autoSolveToggle.addEventListener('change', () => {
     chrome.storage.sync.set({ autoSolve: autoSolveToggle.checked }, () => {
       console.log('UnCAPTCHA auto-solve', autoSolveToggle.checked ? 'on' : 'off');
     });
   });
 
-  // Handle API Key Section visibility
   changeKeyBtn.addEventListener('click', () => {
     showApiKeySection();
     hideApiKeyBtn.style.display = 'block';
@@ -91,7 +83,6 @@ document.addEventListener('DOMContentLoaded', () => {
     hideApiKeySection();
   });
 
-  // Toggle ON/OFF
   toggleButton.addEventListener('change', () => {
     const enabled = toggleButton.checked;
 
@@ -120,12 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
         );
       });
 
-      // Only refresh status (no scanning UI here)
       updateCaptchaStatus();
     });
   });
 
-  // Handle save API key button
   saveApiKeyBtn.addEventListener('click', function() {
     const apiKey = apiKeyInput.value.trim();
     if (apiKey) {

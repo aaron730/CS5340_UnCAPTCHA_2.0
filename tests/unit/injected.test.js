@@ -1,8 +1,3 @@
-// Tests for injected.js. The file is an IIFE that reads the solution from
-// document.currentScript.dataset and distributes it to the page. We use
-// jest.isolateModules + require so Jest's coverage instrumenter sees each
-// execution of the file. document.currentScript has to be shimmed per-run
-// because jsdom doesn't set it when requiring a script.
 
 function runInjected({ solution = '', callback = '' } = {}) {
   const scriptEl = document.createElement('script');
@@ -15,7 +10,6 @@ function runInjected({ solution = '', callback = '' } = {}) {
   });
   try {
     jest.isolateModules(() => {
-      // eslint-disable-next-line global-require
       require('../../injected.js');
     });
   } finally {

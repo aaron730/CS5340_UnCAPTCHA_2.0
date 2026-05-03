@@ -1,7 +1,3 @@
-// Tests for background.js. background.js instantiates a CaptchaSolver at
-// module-load time (which calls chrome.storage.sync.get), and registers
-// chrome.runtime.onMessage / chrome.storage.onChanged listeners. We capture
-// those listeners through the chrome mock so we can invoke them directly.
 
 let messageListener;
 let storageChangedListener;
@@ -29,15 +25,11 @@ global.chrome = {
   },
 };
 
-// Default init resolves with no stored settings. Individual tests can
-// override storageGetImpl before re-requiring background.js.
 storageGetImpl = () => Promise.resolve({});
 
-// Silence console noise from background.js.
 jest.spyOn(console, 'log').mockImplementation(() => {});
 jest.spyOn(console, 'error').mockImplementation(() => {});
 
-// Load background.js once — it registers its listeners as a side effect.
 require('../../background.js');
 
 describe('background.js message listener', () => {
@@ -71,7 +63,6 @@ describe('background.js message listener', () => {
   });
 
   test('solveCaptcha returns true (async) when enabled, even without API key', async () => {
-    // Re-enable.
     messageListener({ action: 'toggleExtension', enabled: true }, {}, jest.fn());
 
     const sendResponse = jest.fn();
@@ -80,9 +71,7 @@ describe('background.js message listener', () => {
       {},
       sendResponse,
     );
-    // Signals async response.
     expect(ret).toBe(true);
-    // Let the rejected promise chain (missing API key) resolve.
     await new Promise((r) => setTimeout(r, 0));
     expect(sendResponse).toHaveBeenCalledWith(
       expect.objectContaining({ error: expect.stringMatching(/API key/i) }),
@@ -105,7 +94,6 @@ describe('background.js message listener', () => {
     const sendResponse = jest.fn();
     const ret = messageListener({ action: 'nope' }, {}, sendResponse);
     expect(sendResponse).not.toHaveBeenCalled();
-    // Falls through to end of listener — returns undefined.
     expect(ret).toBeUndefined();
   });
 });
@@ -130,13 +118,11 @@ describe('background.js storage.onChanged listener', () => {
 describe('background.js CaptchaSolver.solveCaptcha via message listener', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Make sure the solver is enabled and has an API key so fetch is reached.
     messageListener({ action: 'toggleExtension', enabled: true }, {}, jest.fn());
     messageListener({ action: 'updateApiKey', apiKey: 'live-key' }, {}, jest.fn());
   });
 
   test('end-to-end happy path: submit then poll returns the solution', async () => {
-    // First fetch = in.php (submit), second = res.php (get).
     global.fetch = jest.fn()
       .mockResolvedValueOnce({
         json: async () => ({ status: 1, request: 'CAPTCHA_ID_42' }),
@@ -152,7 +138,6 @@ describe('background.js CaptchaSolver.solveCaptcha via message listener', () => 
       sendResponse,
     );
 
-    // Flush microtasks for the two-step async chain.
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
     expect(sendResponse).toHaveBeenCalledWith({ solution: 'TOKEN_VALUE' });
