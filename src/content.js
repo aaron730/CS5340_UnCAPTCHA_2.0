@@ -325,12 +325,20 @@ class ImageCaptchaDetector {
       images.push(...container.querySelectorAll("img"));
     }
 
+    
+    const scored = [];
     images.forEach((img) => {
-      if (!this.processedImages.has(img.src) && this.isValidCaptchaImage(img)) {
-        this.processedImages.add(img.src);
-        this.handleImageCaptcha(img);
-      }
+      if (!isElementVisible(img)) return;
+      if (this.processedImages.has(img.src)) return;
+      if (!this.isValidCaptchaImage(img)) return;
+      scored.push({ img, score: this.getImageCaptchaScore(img) });
     });
+    scored.sort((a, b) => b.score - a.score);
+    if (scored.length > 0) {
+      const best = scored[0].img;
+      this.processedImages.add(best.src);
+      this.handleImageCaptcha(best);
+    }
   }
 
   findAndProcessIframeCaptchas(container) {
@@ -403,6 +411,11 @@ class ImageCaptchaDetector {
     const src = (img.src || '').toLowerCase();
     if (src.endsWith('.svg') || src.includes('.svg?')) return false;
 
+    // Skip explicitly-non-captcha roles in the image's own attributes
+    const attrs = `${img.id || ''} ${img.className || ''} ${img.alt || ''}`.toLowerCase();
+    const disqualifiers = ['icon', 'logo', 'thumbnail', 'preview', 'sample', 'screenshot', 'reload', 'sound', 'audio'];
+    if (disqualifiers.some(d => attrs.includes(d))) return false;
+
     const w = img.naturalWidth || img.width;
     const h = img.naturalHeight || img.height;
     if (w < 30 || h < 30 || w > 1000 || h > 1000) return false;
@@ -450,16 +463,30 @@ class ImageCaptchaDetector {
     if (this.observer) return;
     this.observer = new MutationObserver((mutations) => {
       if (!this.isEnabled) return;
+      let attrChanged = false;
       mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            this.findAndProcessCaptchaImages(node);
-            this.findAndProcessIframeCaptchas(node);
-          }
-        });
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              this.findAndProcessCaptchaImages(node);
+              this.findAndProcessIframeCaptchas(node);
+            }
+          });
+        } else if (mutation.type === 'attributes' && mutation.target.tagName === 'IMG') {
+          attrChanged = true;
+        }
       });
+     
+      if (attrChanged) {
+        this.findAndProcessCaptchaImages(document.body);
+      }
     });
-    this.observer.observe(document.body, { childList: true, subtree: true });
+    this.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'src'],
+    });
   }
 
   async handleImageCaptcha(imgElement) {
@@ -821,5 +848,8 @@ if (typeof module !== 'undefined') {
     showSolvePrompt,
     showSpinner,
     getAutoSolvePreference,
+    isElementVisible,
+    countCaptchasOnPage,
+    _resetActivePrompt: () => { activeSolvePrompt = null; },
   };
 }
