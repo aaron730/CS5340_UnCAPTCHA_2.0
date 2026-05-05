@@ -1,6 +1,39 @@
 // content.js - CAPTCHA detection and solving
 
+function countCaptchasOnPage(detector) {
+  let count = 0;
+  // reCAPTCHA widgets
+  const widgets = document.querySelectorAll('.g-recaptcha, [data-sitekey]');
+  widgets.forEach(w => {
+    if (w.getAttribute('data-sitekey') && isElementVisible(w)) count++;
+  });
+  // Image captchas (only count if detector available)
+  if (detector && typeof detector.isValidCaptchaImage === 'function') {
+    const images = document.querySelectorAll('img');
+    images.forEach(img => {
+      if (isElementVisible(img) && detector.isValidCaptchaImage(img)) count++;
+    });
+  }
+  return count;
+}
+
+function isElementVisible(element) {
+  if (!element || !element.getBoundingClientRect) return false;
+  const rect = element.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return false;
+  const style = (element.ownerDocument && element.ownerDocument.defaultView)
+    ? element.ownerDocument.defaultView.getComputedStyle(element)
+    : null;
+  if (style && (style.visibility === 'hidden' || style.display === 'none' || parseFloat(style.opacity) === 0)) return false;
+  return true;
+}
+
+let activeSolvePrompt = null;
+
 function showSolvePrompt(element, onSolve) {
+  if (activeSolvePrompt && document.body.contains(activeSolvePrompt)) {
+    return null;
+  }
   const prompt = document.createElement('div');
   prompt.className = 'uncaptcha-prompt';
   prompt.style.cssText = `
@@ -41,6 +74,7 @@ function showSolvePrompt(element, onSolve) {
   `;
   solveBtn.onclick = () => {
     prompt.remove();
+    if (activeSolvePrompt === prompt) activeSolvePrompt = null;
     onSolve();
   };
   buttonContainer.appendChild(solveBtn);
@@ -56,13 +90,17 @@ function showSolvePrompt(element, onSolve) {
     cursor: pointer;
     flex: 1;
   `;
-  closeBtn.onclick = () => prompt.remove();
+  closeBtn.onclick = () => {
+    prompt.remove();
+    if (activeSolvePrompt === prompt) activeSolvePrompt = null;
+  };
   buttonContainer.appendChild(closeBtn);
 
   prompt.appendChild(buttonContainer);
 
   // Add to DOM first (required for offset calculations)
   document.body.appendChild(prompt);
+  activeSolvePrompt = prompt;
 
   // Position near element (after appending so offsetHeight is available)
   const rect = element.getBoundingClientRect();
@@ -322,37 +360,62 @@ class ImageCaptchaDetector {
     const alt = (img.alt || '').toLowerCase();
     const id = (img.id || '').toLowerCase();
     const className = (img.className || '').toLowerCase();
+    const imgText = `${alt} ${id} ${className}`;
 
-    const captchaKeywords = [
-      'captcha', 'verify', 'verification', 'code', 'security',
-      'challenge', 'puzzle', 'auth', 'validation', 'robot'
-    ];
+    // Strong: explicit captcha words on the image itself
+    const strongKeywords = ['captcha', 'challenge', 'puzzle'];
+    const srcHasStrong = strongKeywords.some(k => src.includes(k));
+    const attrHasStrong = strongKeywords.some(k => imgText.includes(k));
+    if (srcHasStrong) score += 3;
+    else if (attrHasStrong) score += 2;
 
-    const hasKeyword = captchaKeywords.some(keyword =>
-      src.includes(keyword) ||
-      alt.includes(keyword) ||
-      id.includes(keyword) ||
-      className.includes(keyword)
-    );
-    if (hasKeyword) score += 2;
+    // Medium: captcha word on a wrapping container (form, ancestor div with captcha id/class)
+    let ancestorHasCaptcha = false;
+    let ancestor = img.parentElement;
+    let depth = 0;
+    while (ancestor && depth < 5) {
+      const a = `${ancestor.id || ''} ${ancestor.className || ''}`.toLowerCase();
+      if (strongKeywords.some(k => a.includes(k))) { ancestorHasCaptcha = true; break; }
+      ancestor = ancestor.parentElement;
+      depth++;
+    }
+    if (ancestorHasCaptcha) score += 2;
 
-    const hasNearbyInput = this.findCaptchaInput(img) !== null;
-    if (hasNearbyInput) score += 2;
+    // Medium: a captcha-named input lives in the same form (strict match only)
+    const form = img.closest('form');
+    if (form) {
+      const inputs = form.querySelectorAll('input[type="text"], input[type="password"], input:not([type])');
+      for (const input of inputs) {
+        if (this.isCaptchaInput(input)) { score += 2; break; }
+      }
+    }
 
-    const hasReasonableSize =
-      img.width >= 50 && img.height >= 20 &&
-      img.width <= 500 && img.height <= 200;
+    // Small: reasonable captcha-image dimensions
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w >= 50 && w <= 500 && h >= 20 && h <= 200) score += 1;
 
-    if (hasReasonableSize) score += 1;
     return score;
   }
 
   isValidCaptchaImage(img) {
+    // Skip non-raster sources (SVG/data:url logos)
+    const src = (img.src || '').toLowerCase();
+    if (src.endsWith('.svg') || src.includes('.svg?')) return false;
+
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w < 30 || h < 30 || w > 1000 || h > 1000) return false;
+
+    // Square-ish images are usually logos/avatars, not captchas
+    if (h > 0 && (w / h < 1.2)) {
+      // allow only if there's overwhelming evidence (e.g. src contains "captcha")
+      if (!src.includes('captcha') && !src.includes('challenge')) return false;
+    }
+
+    // Require at least one strong signal, not just "near an input"
     const score = this.getImageCaptchaScore(img);
-    const hasReasonableSize =
-      img.width >= 30 && img.height >= 30 &&
-      img.width <= 1000 && img.height <= 1000;
-    return score >= 4 && hasReasonableSize;
+    return score >= 4;
   }
 
   getIframeCaptchaScore(frame) {
@@ -401,6 +464,10 @@ class ImageCaptchaDetector {
 
   async handleImageCaptcha(imgElement) {
     if (!this.isEnabled) return;
+    if (!isElementVisible(imgElement)) {
+      console.log('UnCAPTCHA: Image captcha not visible, skipping');
+      return;
+    }
     try {
       await this.waitForImageLoad(imgElement);
 
@@ -427,7 +494,8 @@ class ImageCaptchaDetector {
       };
 
       const autoSolve = await getAutoSolvePreference();
-      if (autoSolve) {
+      const captchaCount = countCaptchasOnPage(this);
+      if (autoSolve && captchaCount === 1) {
         console.log('UnCAPTCHA: Auto-solve enabled, skipping prompt');
         const spinner = (globalThis.showSpinner || showSpinner)(imgElement);
         let succeeded = false;
@@ -441,6 +509,13 @@ class ImageCaptchaDetector {
           else spinner.remove();
         }
       } else {
+        if (autoSolve) {
+          console.log('UnCAPTCHA: Multiple captchas on page (' + captchaCount + '), falling back to prompt');
+        }
+        if (activeSolvePrompt && document.body.contains(activeSolvePrompt)) {
+          console.log('UnCAPTCHA: Prompt already active, skipping image captcha');
+          return;
+        }
         const pending = fetchSolution().catch((error) => {
           console.error('UnCAPTCHA: Pre-fetch image captcha failed:', error);
           return null;
@@ -488,15 +563,16 @@ class ImageCaptchaDetector {
   }
 
   findCaptchaInput(imgElement) {
+    // Prefer captcha-named inputs in the same form
     const form = imgElement.closest('form');
     if (form) {
       const inputs = form.querySelectorAll('input[type="text"], input[type="password"], input:not([type])');
       for (const input of inputs) {
         if (this.isCaptchaInput(input)) return input;
       }
-      if (inputs.length > 0) return inputs[0];
     }
 
+    // Then captcha-named inputs in any ancestor
     let parent = imgElement.parentElement;
     while (parent && parent !== document.body) {
       const inputs = parent.querySelectorAll('input[type="text"], input[type="password"], input:not([type])');
@@ -506,19 +582,13 @@ class ImageCaptchaDetector {
       parent = parent.parentElement;
     }
 
-    const allInputs = document.querySelectorAll('input[type="text"], input[type="password"], input:not([type])');
-    let closestInput = null;
-    let closestDistance = Infinity;
-    const imgRect = imgElement.getBoundingClientRect();
-    for (const input of allInputs) {
-      const inputRect = input.getBoundingClientRect();
-      const distance = Math.sqrt(Math.pow(imgRect.left - inputRect.left, 2) + Math.pow(imgRect.top - inputRect.top, 2));
-      if (distance < closestDistance && distance < 300) {
-        closestDistance = distance;
-        closestInput = input;
-      }
+    // Last resort: a single non-captcha input in the same form (only if exactly one)
+    if (form) {
+      const inputs = form.querySelectorAll('input[type="text"], input[type="password"], input:not([type])');
+      if (inputs.length === 1) return inputs[0];
     }
-    return closestInput;
+
+    return null;
   }
 
   isCaptchaInput(input) {
@@ -613,6 +683,8 @@ class RecaptchaV2Detector {
     this.processedWidgets.add(element);
     console.log('UnCAPTCHA: reCAPTCHA v2 detected, sitekey:', sitekey);
 
+    const isInvisible = element.getAttribute('data-size') === 'invisible' || !isElementVisible(element);
+
     console.log('UnCAPTCHA: Requesting reCAPTCHA v2 solution from 2captcha');
     const captchaData = { method: 'userrecaptcha', googlekey: sitekey, pageurl: window.location.href };
     const fetchSolution = () => this.solveCaptcha(captchaData);
@@ -624,7 +696,8 @@ class RecaptchaV2Detector {
     };
 
     const autoSolve = await getAutoSolvePreference();
-    if (autoSolve) {
+    const captchaCount = countCaptchasOnPage(null);
+    if (isInvisible || (autoSolve && captchaCount === 1)) {
       console.log('UnCAPTCHA: Auto-solve enabled, skipping prompt');
       const spinner = (globalThis.showSpinner || showSpinner)(element);
       let succeeded = false;
@@ -638,6 +711,13 @@ class RecaptchaV2Detector {
         else spinner.remove();
       }
     } else {
+      if (autoSolve) {
+        console.log('UnCAPTCHA: Multiple captchas on page (' + captchaCount + '), falling back to prompt');
+      }
+      if (activeSolvePrompt && document.body.contains(activeSolvePrompt)) {
+        console.log('UnCAPTCHA: Prompt already active, skipping reCAPTCHA');
+        return;
+      }
       const pending = fetchSolution().catch((error) => {
         console.error('UnCAPTCHA: Pre-fetch reCAPTCHA v2 failed:', error);
         return null;

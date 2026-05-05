@@ -4,7 +4,7 @@ class CaptchaSolver {
     this.baseUrl = 'https://2captcha.com';
     this.apiKey = ''; // No default API key
     this.enabled = true; // Enabled by default
-    this.init();
+    this.ready = this.init();
   }
   
   async init() {
@@ -103,6 +103,7 @@ class CaptchaSolver {
   
   async solveCaptcha(captchaData) {
     try {
+      await this.ready;
       console.log('Submitting captcha to 2captcha:', captchaData.method);
       const captchaId = await this.submitCaptcha(captchaData);
       
@@ -130,19 +131,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'solveCaptcha') {
-    if (!captchaSolver.enabled) {
-      sendResponse({error: 'Extension is disabled'});
-      return true;
-    }
-    
-    captchaSolver.solveCaptcha(request.captchaData)
-      .then(solution => {
-        sendResponse({solution: solution});
+    captchaSolver.ready
+      .then(() => {
+        if (!captchaSolver.enabled) {
+          sendResponse({error: 'Extension is disabled'});
+          return;
+        }
+        return captchaSolver.solveCaptcha(request.captchaData)
+          .then(solution => sendResponse({solution: solution}));
       })
       .catch(error => {
         sendResponse({error: error.message});
       });
-    
+
     return true; // Indicates we will send a response asynchronously
   }
   
