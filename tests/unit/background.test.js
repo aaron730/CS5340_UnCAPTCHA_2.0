@@ -30,7 +30,7 @@ storageGetImpl = () => Promise.resolve({});
 jest.spyOn(console, 'log').mockImplementation(() => {});
 jest.spyOn(console, 'error').mockImplementation(() => {});
 
-require('../../background.js');
+require('../../src/background.js');
 
 describe('background.js message listener', () => {
   beforeEach(() => {
