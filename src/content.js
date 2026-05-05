@@ -412,22 +412,27 @@ class ImageCaptchaDetector {
         return;
       }
 
-      const runSolve = async () => {
+      const fetchSolution = async () => {
+        const base64 = await this.imageToBase64(imgElement);
+        if (!base64) return null;
+        console.log('UnCAPTCHA: Submitting image captcha to 2captcha');
+        return this.solveCaptcha({ method: 'base64', body: base64 });
+      };
+
+      const applySolution = (response) => {
+        if (!response || !response.solution) return false;
+        const inputField = this.findCaptchaInput(imgElement);
+        if (inputField) this.fillCaptchaInput(inputField, response.solution);
+        return true;
+      };
+
+      const autoSolve = await getAutoSolvePreference();
+      if (autoSolve) {
+        console.log('UnCAPTCHA: Auto-solve enabled, skipping prompt');
         const spinner = (globalThis.showSpinner || showSpinner)(imgElement);
         let succeeded = false;
         try {
-          const base64 = await this.imageToBase64(imgElement);
-          if (!base64) return;
-
-          console.log('UnCAPTCHA: Submitting image captcha to 2captcha');
-          const response = await this.solveCaptcha({ method: 'base64', body: base64 });
-          if (response.solution) {
-            const inputField = this.findCaptchaInput(imgElement);
-            if (inputField) {
-              this.fillCaptchaInput(inputField, response.solution);
-            }
-            succeeded = true;
-          }
+          succeeded = applySolution(await fetchSolution());
         } catch (error) {
           console.error('UnCAPTCHA: Failed to solve image captcha:', error);
         } finally {
@@ -435,14 +440,22 @@ class ImageCaptchaDetector {
           else if (spinner.fail) spinner.fail();
           else spinner.remove();
         }
-      };
-
-      const autoSolve = await getAutoSolvePreference();
-      if (autoSolve) {
-        console.log('UnCAPTCHA: Auto-solve enabled, skipping prompt');
-        runSolve();
       } else {
-        (globalThis.showSolvePrompt || showSolvePrompt)(imgElement, runSolve);
+        const pending = fetchSolution().catch((error) => {
+          console.error('UnCAPTCHA: Pre-fetch image captcha failed:', error);
+          return null;
+        });
+        (globalThis.showSolvePrompt || showSolvePrompt)(imgElement, async () => {
+          const spinner = (globalThis.showSpinner || showSpinner)(imgElement);
+          let succeeded = false;
+          try {
+            succeeded = applySolution(await pending);
+          } finally {
+            if (succeeded && spinner.success) spinner.success();
+            else if (spinner.fail) spinner.fail();
+            else spinner.remove();
+          }
+        });
       }
     } catch (error) {
       console.error('UnCAPTCHA: Failed to solve image captcha:', error);
@@ -600,17 +613,23 @@ class RecaptchaV2Detector {
     this.processedWidgets.add(element);
     console.log('UnCAPTCHA: reCAPTCHA v2 detected, sitekey:', sitekey);
 
-    const runSolve = async () => {
+    console.log('UnCAPTCHA: Requesting reCAPTCHA v2 solution from 2captcha');
+    const captchaData = { method: 'userrecaptcha', googlekey: sitekey, pageurl: window.location.href };
+    const fetchSolution = () => this.solveCaptcha(captchaData);
+
+    const applySolution = (response) => {
+      if (!response || !response.solution) return false;
+      this.applySolution(element, response.solution);
+      return true;
+    };
+
+    const autoSolve = await getAutoSolvePreference();
+    if (autoSolve) {
+      console.log('UnCAPTCHA: Auto-solve enabled, skipping prompt');
       const spinner = (globalThis.showSpinner || showSpinner)(element);
       let succeeded = false;
       try {
-        console.log('UnCAPTCHA: Requesting reCAPTCHA v2 solution from 2captcha');
-        const captchaData = { method: 'userrecaptcha', googlekey: sitekey, pageurl: window.location.href };
-        const response = await this.solveCaptcha(captchaData);
-        if (response.solution) {
-          this.applySolution(element, response.solution);
-          succeeded = true;
-        }
+        succeeded = applySolution(await fetchSolution());
       } catch (error) {
         console.error('UnCAPTCHA: Failed to solve reCAPTCHA v2:', error);
       } finally {
@@ -618,14 +637,22 @@ class RecaptchaV2Detector {
         else if (spinner.fail) spinner.fail();
         else spinner.remove();
       }
-    };
-
-    const autoSolve = await getAutoSolvePreference();
-    if (autoSolve) {
-      console.log('UnCAPTCHA: Auto-solve enabled, skipping prompt');
-      runSolve();
     } else {
-      (globalThis.showSolvePrompt || showSolvePrompt)(element, runSolve);
+      const pending = fetchSolution().catch((error) => {
+        console.error('UnCAPTCHA: Pre-fetch reCAPTCHA v2 failed:', error);
+        return null;
+      });
+      (globalThis.showSolvePrompt || showSolvePrompt)(element, async () => {
+        const spinner = (globalThis.showSpinner || showSpinner)(element);
+        let succeeded = false;
+        try {
+          succeeded = applySolution(await pending);
+        } finally {
+          if (succeeded && spinner.success) spinner.success();
+          else if (spinner.fail) spinner.fail();
+          else spinner.remove();
+        }
+      });
     }
   }
 

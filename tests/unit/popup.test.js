@@ -38,7 +38,7 @@ jest.spyOn(console, 'log').mockImplementation(() => {});
 
 // Load the popup script once. It registers a DOMContentLoaded listener
 // which we dispatch per-test after rebuilding the DOM.
-require('../../popup.js');
+require('../../src/popup.js');
 
 function loadPopup() {
   makePopupDom();

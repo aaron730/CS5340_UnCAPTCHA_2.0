@@ -27,7 +27,7 @@ global.chrome = {
 
 global.showSolvePrompt = jest.fn((el, cb) => cb());
 
-const content = require('../../content.js');
+const content = require('../../src/content.js');
 const {
   ImageCaptchaDetector,
   RecaptchaV2Detector,

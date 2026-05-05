@@ -2,7 +2,7 @@ const { test, expect, chromium } = require('@playwright/test');
 const path = require('path');
 
 test('extension loads and popup opens', async ({ }) => {
-  const pathToExtension = path.join(__dirname, '../../');
+  const pathToExtension = path.join(__dirname, '../../src');
   const userDataDir = '/tmp/test-user-data-dir';
   
   const browserContext = await chromium.launchPersistentContext(userDataDir, {

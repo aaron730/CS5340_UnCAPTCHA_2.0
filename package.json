@@ -2,7 +2,7 @@
   "name": "cs5340_uncaptcha_2.0",
   "version": "1.0.0",
   "description": "Powerpoint: https://uccsoffice365-my.sharepoint.com/:p:/g/personal/aelofson_uccs_edu/IQDCR79QcBOQQLeXUwWkci8vAaXvE9eoYPAw0YKC3_l5wkI?e=4E59ty",
-  "main": "background.js",
+  "main": "src/background.js",
   "scripts": {
     "test:unit": "jest",
     "test:unit:coverage": "jest --coverage",

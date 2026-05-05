@@ -58,11 +58,12 @@ class CaptchaSolver {
     }
   }
   
-  async getCaptchaResult(captchaId) {
-    const maxAttempts = 60; // Max 10 minutes (60 * 10 seconds)
-    let attempts = 0;
-    
-    while (attempts < maxAttempts) {
+  async getCaptchaResult(captchaId, options = {}) {
+    const pollIntervalMs = options.pollIntervalMs ?? 2000;
+    const timeoutMs = options.timeoutMs ?? 180000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
       try {
         const response = await fetch(`${this.baseUrl}/res.php?key=${this.apiKey}&action=get&id=${captchaId}&json=1`);
         const text = await response.text();
@@ -74,13 +75,11 @@ class CaptchaSolver {
           throw new Error(`Invalid 2captcha response format: ${text}`);
         }
         console.log('2captcha res.php response:', result);
-        
+
         if (result.status === 1) {
-          return result.request; // Returns the solution
+          return result.request;
         } else if (result.request === 'CAPCHA_NOT_READY') {
-          // Wait 10 seconds before trying again
-          await new Promise(resolve => setTimeout(resolve, 10000));
-          attempts++;
+          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
         } else {
           let errorMsg = result.error_text || result.request || 'Failed to get captcha result';
           if (errorMsg === 'ERROR_KEY_DOES_NOT_EXIST') {

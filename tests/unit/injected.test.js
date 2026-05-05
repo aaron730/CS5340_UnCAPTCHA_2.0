@@ -10,7 +10,7 @@ function runInjected({ solution = '', callback = '' } = {}) {
   });
   try {
     jest.isolateModules(() => {
-      require('../../injected.js');
+      require('../../src/injected.js');
     });
   } finally {
     Object.defineProperty(document, 'currentScript', {
@@ -33,7 +33,7 @@ describe('injected.js', () => {
     });
     expect(() => {
       jest.isolateModules(() => {
-        require('../../injected.js');
+        require('../../src/injected.js');
       });
     }).not.toThrow();
   });
