@@ -48,7 +48,7 @@ describe('background.js message listener', () => {
     expect(ret).toBe(false);
   });
 
-  test('solveCaptcha short-circuits with error when extension is disabled', () => {
+  test('solveCaptcha short-circuits with error when extension is disabled', async () => {
     // Disable via toggleExtension first.
     messageListener({ action: 'toggleExtension', enabled: false }, {}, jest.fn());
 
@@ -58,6 +58,7 @@ describe('background.js message listener', () => {
       {},
       sendResponse,
     );
+    for (let i = 0; i < 10; i++) await Promise.resolve();
     expect(sendResponse).toHaveBeenCalledWith({ error: 'Extension is disabled' });
     expect(ret).toBe(true);
   });
